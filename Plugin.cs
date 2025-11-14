@@ -25,6 +25,8 @@ namespace ZeepkistWebSockets
         private List<IWebSocketConnection> allSockets = new List<IWebSocketConnection>();
         public static New_ControlCar target; // Zeepkist car to track
 
+        // Previous input values for edge detection
+        private float prevResetValue = 0f;
 
         private void Awake()
         {
@@ -46,6 +48,7 @@ namespace ZeepkistWebSockets
             {
                 socket.OnOpen = () => allSockets.Add(socket);
                 socket.OnClose = () => allSockets.Remove(socket);
+                socket.OnMessage = message => HandleIncomingMessage(message);
             });
 
             logger.LogInfo("[Streamer] WebSocket server started in ws://localhost:8080");
@@ -53,6 +56,55 @@ namespace ZeepkistWebSockets
             // Start data sending loop
             StartCoroutine(SendDataLoop());
         }
+
+        private void HandleIncomingMessage(string message)
+        {
+            try
+            {
+                InputCommand cmd = JsonUtility.FromJson<InputCommand>(message);
+                ApplyInput(cmd);
+            }
+            catch (Exception e)
+            {
+                Plugin.logger.LogError($"Error parsing input: {e}");
+            }
+        }
+
+        private void ApplyInput(InputCommand cmd)
+        {
+            if (Plugin.target == null) return;
+
+            // ---- STEER ----
+            Plugin.target.SteerAction2.axis = cmd.steer;
+
+            // ---- BRAKE ----
+            bool brakePressed = cmd.brake > 0.5f;
+            Plugin.target.BrakeAction2.buttonHeld = brakePressed;
+            Plugin.target.BrakeAction2.buttonDown = brakePressed;
+            Plugin.target.BrakeAction2.buttonUp = !brakePressed;
+            Plugin.target.BrakeAction2.axis = cmd.brake;
+
+            // ---- ARMS UP ----
+            bool armsUpPressed = cmd.armsUp > 0.5f;
+            Plugin.target.ArmsUpAction2.buttonHeld = armsUpPressed;
+            Plugin.target.ArmsUpAction2.buttonDown = armsUpPressed;
+            Plugin.target.ArmsUpAction2.buttonUp = !armsUpPressed;
+
+            // ---- RESET ----
+            // Reset (edge-triggered)
+            if (cmd.reset > 0f && prevResetValue == 0f)
+            {
+                Plugin.target.ResetAction.buttonDown = true;
+            }
+            else
+            {
+                Plugin.target.ResetAction.buttonDown = false;
+            }
+
+            prevResetValue = cmd.reset;
+
+        }
+
 
 
         // Set the target car to stream data from
@@ -106,7 +158,15 @@ namespace ZeepkistWebSockets
 
             // Send to all sockets
             foreach (var socket in allSockets)
-                socket.Send(json);
+                try
+                {
+                    socket.Send(json);
+                }
+                catch
+                {
+                    // Dead socket → remove
+                    allSockets.Remove(socket);
+                }
         }
 
 
@@ -152,4 +212,15 @@ namespace ZeepkistWebSockets
         public Vector3 localVelocity;
         public Vector3 localAngularVelocity;
     }
+
+    // Data structure for InputCommands
+    [Serializable]
+    public class InputCommand
+    {
+        public float steer;
+        public float brake;
+        public float armsUp;
+        public float reset;
+    }
+
 }
