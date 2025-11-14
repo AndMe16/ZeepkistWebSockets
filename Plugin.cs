@@ -23,6 +23,7 @@ namespace ZeepkistWebSockets
         // WebSocket server and connections
         private WebSocketServer server;
         private List<IWebSocketConnection> allSockets = new List<IWebSocketConnection>();
+        private List<IWebSocketConnection> socketsToClose = new List<IWebSocketConnection>();
         public static New_ControlCar target; // Zeepkist car to track
 
         // Previous input values for edge detection
@@ -138,6 +139,9 @@ namespace ZeepkistWebSockets
             if (target == null || allSockets.Count == 0)
                 return;
 
+            // Clear list of sockets to close
+            socketsToClose.Clear();
+
             // Gather data
             var pos = target.rb.position;
             var rot = target.rb.rotation.eulerAngles;
@@ -158,15 +162,21 @@ namespace ZeepkistWebSockets
 
             // Send to all sockets
             foreach (var socket in allSockets)
-                try
-                {
+            {
+                if (socket.IsAvailable)
                     socket.Send(json);
-                }
-                catch
+                else
                 {
-                    // Dead socket → remove
-                    allSockets.Remove(socket);
+                    socketsToClose.Add(socket);
+                    Plugin.logger.LogWarning("[Streamer] Socket not available when sending data.");
                 }
+            }
+
+            // Clean up closed sockets
+            foreach (var socket in socketsToClose)
+            {
+                allSockets.Remove(socket);
+            }
         }
 
 
