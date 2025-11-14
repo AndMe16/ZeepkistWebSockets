@@ -73,33 +73,33 @@ namespace ZeepkistWebSockets
 
         private void ApplyInput(InputCommand cmd)
         {
-            if (Plugin.target == null) return;
+            if (target == null) return;
 
             // ---- STEER ----
-            Plugin.target.SteerAction2.axis = cmd.steer;
+            target.SteerAction2.axis = cmd.steer;
 
             // ---- BRAKE ----
             bool brakePressed = cmd.brake > 0.5f;
-            Plugin.target.BrakeAction2.buttonHeld = brakePressed;
-            Plugin.target.BrakeAction2.buttonDown = brakePressed;
-            Plugin.target.BrakeAction2.buttonUp = !brakePressed;
-            Plugin.target.BrakeAction2.axis = cmd.brake;
+            target.BrakeAction2.buttonHeld = brakePressed;
+            target.BrakeAction2.buttonDown = brakePressed;
+            target.BrakeAction2.buttonUp = !brakePressed;
+            target.BrakeAction2.axis = cmd.brake;
 
             // ---- ARMS UP ----
             bool armsUpPressed = cmd.armsUp > 0.5f;
-            Plugin.target.ArmsUpAction2.buttonHeld = armsUpPressed;
-            Plugin.target.ArmsUpAction2.buttonDown = armsUpPressed;
-            Plugin.target.ArmsUpAction2.buttonUp = !armsUpPressed;
+            target.ArmsUpAction2.buttonHeld = armsUpPressed;
+            target.ArmsUpAction2.buttonDown = armsUpPressed;
+            target.ArmsUpAction2.buttonUp = !armsUpPressed;
 
             // ---- RESET ----
             // Reset (edge-triggered)
             if (cmd.reset > 0f && prevResetValue == 0f)
             {
-                Plugin.target.ResetAction.buttonDown = true;
+                target.ResetAction.buttonDown = true;
             }
             else
             {
-                Plugin.target.ResetAction.buttonDown = false;
+                target.ResetAction.buttonDown = false;
             }
 
             prevResetValue = cmd.reset;
