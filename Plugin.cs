@@ -25,6 +25,8 @@ namespace ZeepkistWebSockets
         private List<IWebSocketConnection> allSockets = new List<IWebSocketConnection>();
         private List<IWebSocketConnection> socketsToClose = new List<IWebSocketConnection>();
         public static New_ControlCar target; // Zeepkist car to track
+        private InputCommand latestCommand = new InputCommand();
+        private bool hasCommand = false;
 
         // Previous input values for edge detection
         private float prevResetValue = 0f;
@@ -58,12 +60,21 @@ namespace ZeepkistWebSockets
             StartCoroutine(SendDataLoop());
         }
 
+        private void Update()
+        {
+            if (!hasCommand || Plugin.target == null)
+                return;
+
+            ApplyInput(latestCommand);   // <-- always run once per frame
+        }
+
         private void HandleIncomingMessage(string message)
         {
             try
             {
                 InputCommand cmd = JsonUtility.FromJson<InputCommand>(message);
-                ApplyInput(cmd);
+                latestCommand = cmd;   // <-- store
+                hasCommand = true;
             }
             catch (Exception e)
             {
