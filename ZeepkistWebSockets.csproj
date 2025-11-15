@@ -4,7 +4,7 @@
 		<TargetFramework>net472</TargetFramework>
 		<AssemblyName>ZeepkistDataStreamer</AssemblyName>
 		<Product>ZeepkistDataStreamer</Product>
-		<Version>1.1.0</Version>
+		<Version>1.2.0</Version>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<LangVersion>latest</LangVersion>
 		<RestoreAdditionalProjectSources>
@@ -20,6 +20,7 @@
 		<PackageReference Include="BepInEx.Core" Version="5.*" />
 		<PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" />
 		<PackageReference Include="Fleck" Version="1.2.0" />
+		<PackageReference Include="MessagePack" Version="3.1.4" />
 		<PackageReference Include="UnityEngine.Modules" Version="2021.3.45" IncludeAssets="compile" />
 		<PackageReference Include="Zeepkist.GameLibs" Version="*" />
 		

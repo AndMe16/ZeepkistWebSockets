@@ -2,6 +2,7 @@
 using BepInEx.Logging;
 using Fleck;
 using HarmonyLib;
+using Newtonsoft.Json;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -55,9 +56,6 @@ namespace ZeepkistWebSockets
             });
 
             logger.LogInfo("[Streamer] WebSocket server started in ws://localhost:8080");
-
-            // Start data sending loop
-            StartCoroutine(SendDataLoop());
         }
 
         private void Update()
@@ -73,8 +71,27 @@ namespace ZeepkistWebSockets
             try
             {
                 InputCommand cmd = JsonUtility.FromJson<InputCommand>(message);
-                latestCommand = cmd;   // <-- store
-                hasCommand = true;
+
+                if (cmd == null)
+                {
+                    logger.LogError("[Streamer] Received null command.");
+                    return;
+                }
+
+                if (cmd.cmd == "STATE_REQUEST")
+                {
+                    SendData();
+                }
+
+                else if (cmd.cmd == "ACTION")
+                {
+                    latestCommand = cmd;   // <-- store
+                    hasCommand = true;
+                }
+                else
+                {
+                    logger.LogWarning($"[Streamer] Unknown command received: {cmd.cmd}");
+                }
             }
             catch (Exception e)
             {
@@ -131,18 +148,6 @@ namespace ZeepkistWebSockets
             logger.LogInfo($"[Streamer] localVelocity: {target.localAngularVelocity}");
         }
 
-        // Coroutine to send data at regular intervals
-        IEnumerator SendDataLoop()
-        {
-            float interval = 1f; // 1 second interval
-
-            while (true)
-            {
-                SendData();
-                yield return new WaitForSeconds(interval);
-            }
-        }
-
         // Send data to all connected clients
         private void SendData()
         {
@@ -160,12 +165,16 @@ namespace ZeepkistWebSockets
             var locAngVel = target.localAngularVelocity;
 
             // Create data object
-            StreamData data = new StreamData()
+            StreamData data = new StreamData
             {
-                position = pos,
-                rotation = rot,
-                localVelocity = locVel,
-                localAngularVelocity = locAngVel
+                state = new StateData
+                {
+                    position = pos,
+                    rotation = rot,
+                    localVelocity = locVel,
+                    localAngularVelocity = locAngVel
+                },
+                timestamp = Time.time
             };
 
             // Serialize
@@ -226,7 +235,7 @@ namespace ZeepkistWebSockets
 
     // Data structure for streaming
     [Serializable]
-    public class StreamData
+    public class StateData
     {
         public Vector3 position;
         public Vector3 rotation;
@@ -234,10 +243,18 @@ namespace ZeepkistWebSockets
         public Vector3 localAngularVelocity;
     }
 
+    [Serializable]
+    public class StreamData
+    {
+        public StateData state;
+        public float timestamp;
+    }
+
     // Data structure for InputCommands
     [Serializable]
     public class InputCommand
     {
+        public string cmd;
         public float steer;
         public float brake;
         public float armsUp;
