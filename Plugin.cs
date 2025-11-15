@@ -2,12 +2,14 @@
 using BepInEx.Logging;
 using Fleck;
 using HarmonyLib;
-using Newtonsoft.Json;
+using MessagePack;
+using MessagePack.Formatters;
+using MessagePack.Resolvers;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using ZeepkistDataStreamer;
+
 
 namespace ZeepkistWebSockets
 {
@@ -28,6 +30,7 @@ namespace ZeepkistWebSockets
         public static New_ControlCar target; // Zeepkist car to track
         private InputCommand latestCommand = new InputCommand();
         private bool hasCommand = false;
+        private MessagePackSerializerOptions options;
 
         // Previous input values for edge detection
         private float prevResetValue = 0f;
@@ -41,6 +44,15 @@ namespace ZeepkistWebSockets
             harmony.PatchAll();
 
             logger.LogInfo("Plugin andme123.zeepkistdatastreamer is loaded!");
+
+            StaticCompositeResolver.Instance.Register(
+                UnityVectorResolver.Instance,
+                StandardResolver.Instance
+            );
+
+            options = MessagePackSerializerOptions.Standard.WithResolver(StaticCompositeResolver.Instance);
+            MessagePackSerializer.DefaultOptions = options;
+
         }
 
         private void Start()
@@ -52,10 +64,14 @@ namespace ZeepkistWebSockets
             {
                 socket.OnOpen = () => allSockets.Add(socket);
                 socket.OnClose = () => allSockets.Remove(socket);
-                socket.OnMessage = message => HandleIncomingMessage(message);
+                socket.OnBinary = bytes => HandleIncomingBinary(bytes);
+                socket.OnMessage = message => logger.LogInfo($"[Streamer] Text message received: {message}");
+                socket.OnError = ex => logger.LogError($"[Streamer] WebSocket error: {ex.Message}");
+                
             });
 
             logger.LogInfo("[Streamer] WebSocket server started in ws://localhost:8080");
+
         }
 
         private void Update()
@@ -66,11 +82,11 @@ namespace ZeepkistWebSockets
             ApplyInput(latestCommand);   // <-- always run once per frame
         }
 
-        private void HandleIncomingMessage(string message)
+        private void HandleIncomingBinary(byte[] packet)
         {
             try
             {
-                InputCommand cmd = JsonUtility.FromJson<InputCommand>(message);
+                var cmd = MessagePackSerializer.Deserialize<InputCommand>(packet);
 
                 if (cmd == null)
                 {
@@ -80,11 +96,13 @@ namespace ZeepkistWebSockets
 
                 if (cmd.cmd == "STATE_REQUEST")
                 {
+                    //logger.LogInfo("[Streamer] STATE_REQUEST received.");
                     SendData();
                 }
 
                 else if (cmd.cmd == "ACTION")
                 {
+                    //logger.LogInfo("[Streamer] ACTION command received.");
                     latestCommand = cmd;   // <-- store
                     hasCommand = true;
                 }
@@ -177,14 +195,18 @@ namespace ZeepkistWebSockets
                 timestamp = Time.time
             };
 
-            // Serialize
-            string json = JsonUtility.ToJson(data);
+
+            // Encode data
+            byte[] bytes = MessagePackSerializer.Serialize(data, options);
 
             // Send to all sockets
             foreach (var socket in allSockets)
             {
                 if (socket.IsAvailable)
-                    socket.Send(json);
+                {
+                    socket.Send(bytes);
+                    //logger.LogInfo("[Streamer] Sent data to client.");
+                }
                 else
                 {
                     socketsToClose.Add(socket);
@@ -233,32 +255,72 @@ namespace ZeepkistWebSockets
         }
     }
 
-    // Data structure for streaming
-    [Serializable]
+    // --- STATE DATA ---
+    [MessagePackObject(keyAsPropertyName:true)]
     public class StateData
     {
-        public Vector3 position;
-        public Vector3 rotation;
-        public Vector3 localVelocity;
-        public Vector3 localAngularVelocity;
+        [Key(0)] public Vector3 position;
+        [Key(1)] public Vector3 rotation;
+        [Key(2)] public Vector3 localVelocity;
+        [Key(3)] public Vector3 localAngularVelocity;
+
     }
 
-    [Serializable]
+    // --- STREAM DATA ---
+    [MessagePackObject(keyAsPropertyName:true)]
     public class StreamData
     {
-        public StateData state;
-        public float timestamp;
+        [Key(0)] public StateData state;
+        [Key(1)] public float timestamp;
     }
 
-    // Data structure for InputCommands
-    [Serializable]
+    // --- INPUT COMMAND ---
+    [MessagePackObject(keyAsPropertyName:true)]
     public class InputCommand
     {
-        public string cmd;
-        public float steer;
-        public float brake;
-        public float armsUp;
-        public float reset;
+        [Key(0)] public string cmd;
+        [Key(1)] public float steer;
+        [Key(2)] public float brake;
+        [Key(3)] public float armsUp;
+        [Key(4)] public float reset;
     }
+
+    // --- MessagePack Formatters and Resolvers for Unity types ---
+    // Vector3 Formatter
+    public class Vector3Formatter : IMessagePackFormatter<Vector3>
+    {
+        public void Serialize(ref MessagePackWriter writer, Vector3 value, MessagePackSerializerOptions options)
+        {
+            writer.WriteArrayHeader(3);
+            writer.Write(value.x);
+            writer.Write(value.y);
+            writer.Write(value.z);
+        }
+
+        public Vector3 Deserialize(ref MessagePackReader reader, MessagePackSerializerOptions options)
+        {
+            int count = reader.ReadArrayHeader();
+            float x = reader.ReadSingle();
+            float y = reader.ReadSingle();
+            float z = reader.ReadSingle();
+            return new Vector3(x, y, z);
+        }
+    }
+
+    // Unity Resolver
+    public class UnityVectorResolver : IFormatterResolver
+    {
+        public static readonly UnityVectorResolver Instance = new UnityVectorResolver();
+
+        public IMessagePackFormatter<T> GetFormatter<T>()
+        {
+            if (typeof(T) == typeof(UnityEngine.Vector3))
+                return (IMessagePackFormatter<T>)(object)new Vector3Formatter();
+
+            return null;
+        }
+    }
+
+
 
 }

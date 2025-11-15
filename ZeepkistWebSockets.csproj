@@ -20,8 +20,8 @@
 		<PackageReference Include="BepInEx.Core" Version="5.*" />
 		<PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" />
 		<PackageReference Include="Fleck" Version="1.2.0" />
-		<PackageReference Include="MessagePack" Version="3.1.4" />
-		<PackageReference Include="UnityEngine.Modules" Version="2021.3.45" IncludeAssets="compile" />
+		<PackageReference Include="MessagePack" Version="2.5.192" />
+		<PackageReference Include="UnityEngine.Modules" Version="2021.3.10" IncludeAssets="compile" />
 		<PackageReference Include="Zeepkist.GameLibs" Version="*" />
 		
 	</ItemGroup>
@@ -46,6 +46,13 @@
 		<Copy SourceFiles="$(TargetDir)ZeepkistDataStreamer.dll" DestinationFiles="$(ModDirectory)/ZeepkistDataStreamer-$(Version).dll" />
 		<Copy SourceFiles="$(TargetDir)ZeepkistDataStreamer.pdb" DestinationFiles="$(ModDirectory)/ZeepkistDataStreamer-$(Version).pdb" />
 		<Copy SourceFiles="$(TargetDir)Fleck.dll" DestinationFiles="$(ModDirectory)/Fleck.dll" />
+		<Copy SourceFiles="$(TargetDir)MessagePack.dll" DestinationFiles="$(ModDirectory)/MessagePack.dll" />
+		<Copy SourceFiles="$(TargetDir)MessagePack.Annotations.dll" DestinationFiles="$(ModDirectory)/MessagePack.Annotations.dll" />
+		<Copy SourceFiles="$(TargetDir)System.Threading.Tasks.Extensions.dll" DestinationFiles="$(ModDirectory)/System.Threading.Tasks.Extensions.dll" />
+		<Copy SourceFiles="$(TargetDir)System.Memory.dll" DestinationFiles="$(ModDirectory)/System.Memory.dll" />
+		<Copy SourceFiles="$(TargetDir)System.Runtime.CompilerServices.Unsafe.dll" DestinationFiles="$(ModDirectory)/System.Runtime.CompilerServices.Unsafe.dll" />
+		<Copy SourceFiles="$(TargetDir)System.Buffers.dll" DestinationFiles="$(ModDirectory)/System.Buffers.dll" />
+		<Copy SourceFiles="$(TargetDir)System.Collections.Immutable.dll" DestinationFiles="$(ModDirectory)/System.Collections.Immutable.dll" />
 
 		<!-- Copy Resources -->
 		<ItemGroup>
