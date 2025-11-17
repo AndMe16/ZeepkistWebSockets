@@ -32,8 +32,6 @@ namespace ZeepkistWebSockets
         private bool hasCommand = false;
         private MessagePackSerializerOptions options;
 
-        // Previous input values for edge detection
-        private float prevResetValue = 0f;
 
         private void Awake()
         {
@@ -74,10 +72,17 @@ namespace ZeepkistWebSockets
 
         }
 
-        private void Update()
+        private void FixedUpdate()
         {
             if (!hasCommand || Plugin.target == null)
                 return;
+
+            if (allSockets.Count == 0)
+            {
+                latestCommand = new InputCommand(); // Reset to default
+                hasCommand = false;
+                return; // No clients connected
+            }
 
             ApplyInput(latestCommand);   // <-- always run once per frame
         }
@@ -105,6 +110,7 @@ namespace ZeepkistWebSockets
                     //logger.LogInfo("[Streamer] ACTION command received.");
                     latestCommand = cmd;   // <-- store
                     hasCommand = true;
+                    //logger.LogInfo($"[Streamer] Received Input - Steer: {cmd.steer}, Brake: {cmd.brake}, ArmsUp: {cmd.armsUp}, Reset: {cmd.reset}");
                 }
                 else
                 {
@@ -119,6 +125,9 @@ namespace ZeepkistWebSockets
 
         private void ApplyInput(InputCommand cmd)
         {
+            // Looking for a better approach right now
+            // This is kinda buggy 
+
             if (target == null) return;
 
             // ---- STEER ----
@@ -127,19 +136,16 @@ namespace ZeepkistWebSockets
             // ---- BRAKE ----
             bool brakePressed = cmd.brake > 0.5f;
             target.BrakeAction2.buttonHeld = brakePressed;
-            target.BrakeAction2.buttonDown = brakePressed;
-            target.BrakeAction2.buttonUp = !brakePressed;
             target.BrakeAction2.axis = cmd.brake;
 
             // ---- ARMS UP ----
             bool armsUpPressed = cmd.armsUp > 0.5f;
             target.ArmsUpAction2.buttonHeld = armsUpPressed;
-            target.ArmsUpAction2.buttonDown = armsUpPressed;
-            target.ArmsUpAction2.buttonUp = !armsUpPressed;
+            target.ArmsUpAction2.axis = cmd.armsUp;
 
             // ---- RESET ----
             // Reset (edge-triggered)
-            if (cmd.reset > 0f && prevResetValue == 0f)
+            if (cmd.reset > 0f && target.ResetAction.buttonDown == false)
             {
                 target.ResetAction.buttonDown = true;
             }
@@ -148,7 +154,7 @@ namespace ZeepkistWebSockets
                 target.ResetAction.buttonDown = false;
             }
 
-            prevResetValue = cmd.reset;
+            //logger.LogInfo($"[Streamer] Applied Input - Steer: {cmd.steer}, Brake: {cmd.brake}, ArmsUp: {cmd.armsUp}, Reset: {cmd.reset}");
 
         }
 
@@ -209,6 +215,7 @@ namespace ZeepkistWebSockets
                 }
                 else
                 {
+                    socket.Close();
                     socketsToClose.Add(socket);
                     Plugin.logger.LogWarning("[Streamer] Socket not available when sending data.");
                 }
