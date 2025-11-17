@@ -115,7 +115,9 @@ namespace ZeepkistDataStreamer
             // Looking for a better approach right now
             // This is kinda buggy 
             // I give up with this approach for now
-            // Just emulate the inputs with an external virutal controller software (e.g. ViGEmBus)
+            // Just emulate the inputs with an external virutal controller software (e.g. ViGEmBus) (UPDATE: This is also pretty buggy, continue reading)
+            // Nevermind, apparently it's just Unity failing to simulate random inputs :D (This took me way too many hours to discover)
+            // Use this approach if you prefer
 
             if (target == null) return;
 
