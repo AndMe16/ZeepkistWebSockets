@@ -82,7 +82,7 @@ namespace ZeepkistDataStreamer
                 latestCommand = cmd;
             }
 
-            ApplyInput(latestCommand);
+            //ApplyInput(latestCommand);
         }
 
 
@@ -114,6 +114,8 @@ namespace ZeepkistDataStreamer
         {
             // Looking for a better approach right now
             // This is kinda buggy 
+            // I give up with this approach for now
+            // Just emulate the inputs with an external virutal controller software (e.g. ViGEmBus)
 
             if (target == null) return;
 
