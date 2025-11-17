@@ -6,12 +6,11 @@ using MessagePack;
 using MessagePack.Formatters;
 using MessagePack.Resolvers;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using UnityEngine;
-using ZeepkistDataStreamer;
 
-
-namespace ZeepkistWebSockets
+namespace ZeepkistDataStreamer
 {
     [BepInPlugin("andme123.zeepkistdatastreamer", "ZeepkistDataStreamer", MyPluginInfo.PLUGIN_VERSION)]
 
@@ -27,10 +26,12 @@ namespace ZeepkistWebSockets
         private WebSocketServer server;
         private List<IWebSocketConnection> allSockets = new List<IWebSocketConnection>();
         private List<IWebSocketConnection> socketsToClose = new List<IWebSocketConnection>();
-        public static New_ControlCar target; // Zeepkist car to track
-        private InputCommand latestCommand = new InputCommand();
-        private bool hasCommand = false;
+        public static SetupCar target; // Zeepkist car to track
+        public static InputCommand latestCommand = new InputCommand();
+        public static bool hasCommand = false;
         private MessagePackSerializerOptions options;
+
+        public static ConcurrentQueue<InputCommand> commandQueue = new ConcurrentQueue<InputCommand>();
 
 
         private void Awake()
@@ -74,18 +75,16 @@ namespace ZeepkistWebSockets
 
         private void FixedUpdate()
         {
-            if (!hasCommand || Plugin.target == null)
-                return;
+            if (Plugin.target == null) return;
 
-            if (allSockets.Count == 0)
+            while (commandQueue.TryDequeue(out var cmd))
             {
-                latestCommand = new InputCommand(); // Reset to default
-                hasCommand = false;
-                return; // No clients connected
+                latestCommand = cmd;
             }
 
-            ApplyInput(latestCommand);   // <-- always run once per frame
+            ApplyInput(latestCommand);
         }
+
 
         private void HandleIncomingBinary(byte[] packet)
         {
@@ -93,28 +92,15 @@ namespace ZeepkistWebSockets
             {
                 var cmd = MessagePackSerializer.Deserialize<InputCommand>(packet);
 
-                if (cmd == null)
+                if (cmd.cmd == "ACTION")
                 {
-                    logger.LogError("[Streamer] Received null command.");
+                    commandQueue.Enqueue(cmd);
                     return;
                 }
 
                 if (cmd.cmd == "STATE_REQUEST")
                 {
-                    //logger.LogInfo("[Streamer] STATE_REQUEST received.");
                     SendData();
-                }
-
-                else if (cmd.cmd == "ACTION")
-                {
-                    //logger.LogInfo("[Streamer] ACTION command received.");
-                    latestCommand = cmd;   // <-- store
-                    hasCommand = true;
-                    //logger.LogInfo($"[Streamer] Received Input - Steer: {cmd.steer}, Brake: {cmd.brake}, ArmsUp: {cmd.armsUp}, Reset: {cmd.reset}");
-                }
-                else
-                {
-                    logger.LogWarning($"[Streamer] Unknown command received: {cmd.cmd}");
                 }
             }
             catch (Exception e)
@@ -122,6 +108,7 @@ namespace ZeepkistWebSockets
                 Plugin.logger.LogError($"Error parsing input: {e}");
             }
         }
+
 
         private void ApplyInput(InputCommand cmd)
         {
@@ -131,30 +118,30 @@ namespace ZeepkistWebSockets
             if (target == null) return;
 
             // ---- STEER ----
-            target.SteerAction2.axis = cmd.steer;
+            target.Inputs[0].SteerAction.axis = cmd.steer;
 
             // ---- BRAKE ----
             bool brakePressed = cmd.brake > 0.5f;
-            target.BrakeAction2.buttonHeld = brakePressed;
-            target.BrakeAction2.axis = cmd.brake;
+            target.Inputs[0].BrakeAction.buttonHeld = brakePressed;
+            target.Inputs[0].BrakeAction.axis = cmd.brake;
 
             // ---- ARMS UP ----
             bool armsUpPressed = cmd.armsUp > 0.5f;
-            target.ArmsUpAction2.buttonHeld = armsUpPressed;
-            target.ArmsUpAction2.axis = cmd.armsUp;
+            target.Inputs[0].ArmsUpAction.buttonHeld = armsUpPressed;
+            target.Inputs[0].ArmsUpAction.axis = cmd.armsUp;
 
             // ---- RESET ----
             // Reset (edge-triggered)
-            if (cmd.reset > 0f && target.ResetAction.buttonDown == false)
+            if (cmd.reset > 0f && target.Inputs[0].ResetAction.buttonDown == false)
             {
-                target.ResetAction.buttonDown = true;
+                target.Inputs[0].ResetAction.buttonDown = true;
             }
             else
             {
-                target.ResetAction.buttonDown = false;
+                target.Inputs[0].ResetAction.buttonDown = false;
             }
 
-            //logger.LogInfo($"[Streamer] Applied Input - Steer: {cmd.steer}, Brake: {cmd.brake}, ArmsUp: {cmd.armsUp}, Reset: {cmd.reset}");
+            // logger.LogInfo($"[Streamer] Applied Input - Steer: {cmd.steer}, Brake: {cmd.brake}, ArmsUp: {cmd.armsUp}, Reset: {cmd.reset}");
 
         }
 
@@ -163,13 +150,13 @@ namespace ZeepkistWebSockets
         // Set the target car to stream data from
         internal void SetTarget()
         {
-            target = FindObjectOfType<New_ControlCar>();
+            target = FindObjectOfType<SetupCar>();
             logger.LogInfo($"[Streamer] Target car set to {target.name}");
-            logger.LogInfo($"[Streamer] playerNum: {target.playerNum}");
-            logger.LogInfo($"[Streamer] rb position: {target.rb.position}");
-            logger.LogInfo($"[Streamer] rb rotation: {target.rb.rotation}");
-            logger.LogInfo($"[Streamer] localVelocity: {target.localVelocity}");
-            logger.LogInfo($"[Streamer] localVelocity: {target.localAngularVelocity}");
+            logger.LogInfo($"[Streamer] playerNum: {target.cc.playerNum}");
+            logger.LogInfo($"[Streamer] rb position: {target.cc.rb.position}");
+            logger.LogInfo($"[Streamer] rb rotation: {target.cc.rb.rotation}");
+            logger.LogInfo($"[Streamer] localVelocity: {target.cc.localVelocity}");
+            logger.LogInfo($"[Streamer] localVelocity: {target.cc.localAngularVelocity}");
         }
 
         // Send data to all connected clients
@@ -183,10 +170,10 @@ namespace ZeepkistWebSockets
             socketsToClose.Clear();
 
             // Gather data
-            var pos = target.rb.position;
-            var rot = target.rb.rotation.eulerAngles;
-            var locVel = target.localVelocity;
-            var locAngVel = target.localAngularVelocity;
+            var pos = target.cc.rb.position;
+            var rot = target.cc.rb.rotation.eulerAngles;
+            var locVel = target.cc.localVelocity;
+            var locAngVel = target.cc.localAngularVelocity;
 
             // Create data object
             StreamData data = new StreamData
