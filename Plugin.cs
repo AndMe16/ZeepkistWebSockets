@@ -24,14 +24,13 @@ namespace ZeepkistDataStreamer
 
         // WebSocket server and connections
         private WebSocketServer server;
-        private List<IWebSocketConnection> allSockets = new List<IWebSocketConnection>();
-        private List<IWebSocketConnection> socketsToClose = new List<IWebSocketConnection>();
+        private ConcurrentDictionary<Guid, IWebSocketConnection> allSockets = new ConcurrentDictionary<Guid, IWebSocketConnection>();
         public static SetupCar target; // Zeepkist car to track
         public static InputCommand latestCommand = new InputCommand();
-        public static bool hasCommand = false;
         private MessagePackSerializerOptions options;
 
         public static ConcurrentQueue<InputCommand> commandQueue = new ConcurrentQueue<InputCommand>();
+        public static ConcurrentQueue<bool> stateRequests = new ConcurrentQueue<bool>();
 
 
         private void Awake()
@@ -61,8 +60,8 @@ namespace ZeepkistDataStreamer
             server = new WebSocketServer("ws://0.0.0.0:8080");
             server.Start(socket =>
             {
-                socket.OnOpen = () => allSockets.Add(socket);
-                socket.OnClose = () => allSockets.Remove(socket);
+                socket.OnOpen = () => allSockets.TryAdd(socket.ConnectionInfo.Id, socket);
+                socket.OnClose = () => allSockets.TryRemove(socket.ConnectionInfo.Id, out _);
                 socket.OnBinary = bytes => HandleIncomingBinary(bytes);
                 socket.OnMessage = message => logger.LogInfo($"[Streamer] Text message received: {message}");
                 socket.OnError = ex => logger.LogError($"[Streamer] WebSocket error: {ex.Message}");
@@ -75,17 +74,21 @@ namespace ZeepkistDataStreamer
 
         private void FixedUpdate()
         {
-            if (Plugin.target == null) return;
+            if (Plugin.target == null)
+                return;
 
+            // handle queued inputs
             while (commandQueue.TryDequeue(out var cmd))
-            {
                 latestCommand = cmd;
-            }
+
+            // handle WS state requests
+            while (stateRequests.TryDequeue(out _))
+                SendData();
 
             //ApplyInput(latestCommand);
         }
 
-
+        // Handle incoming binary messages (input commands)
         private void HandleIncomingBinary(byte[] packet)
         {
             try
@@ -100,7 +103,7 @@ namespace ZeepkistDataStreamer
 
                 if (cmd.cmd == "STATE_REQUEST")
                 {
-                    SendData();
+                    stateRequests.Enqueue(true);
                 }
             }
             catch (Exception e)
@@ -163,9 +166,6 @@ namespace ZeepkistDataStreamer
             if (target == null || allSockets.Count == 0)
                 return;
 
-            // Clear list of sockets to close
-            socketsToClose.Clear();
-
             // Gather data
             var pos = target.cc.rb.position;
             var rot = target.cc.rb.rotation.eulerAngles;
@@ -188,27 +188,21 @@ namespace ZeepkistDataStreamer
 
             // Encode data
             byte[] bytes = MessagePackSerializer.Serialize(data, options);
-
-            // Send to all sockets
-            foreach (var socket in allSockets)
+            foreach (var kvp in allSockets)
             {
+                var id = kvp.Key;
+                var socket = kvp.Value;
+
                 if (socket.IsAvailable)
                 {
                     socket.Send(bytes);
-                    //logger.LogInfo("[Streamer] Sent data to client.");
                 }
                 else
                 {
+                    Plugin.logger.LogWarning("[Streamer] Removing dead socket.");
+                    allSockets.TryRemove(id, out _);
                     socket.Close();
-                    socketsToClose.Add(socket);
-                    Plugin.logger.LogWarning("[Streamer] Socket not available when sending data.");
                 }
-            }
-
-            // Clean up closed sockets
-            foreach (var socket in socketsToClose)
-            {
-                allSockets.Remove(socket);
             }
         }
 
@@ -218,7 +212,7 @@ namespace ZeepkistDataStreamer
         {
             // Clean up WebSocket connections
             foreach (var socket in allSockets)
-                socket.Close();
+                socket.Value.Close();
             allSockets.Clear();
             server?.Dispose();
 
@@ -250,10 +244,10 @@ namespace ZeepkistDataStreamer
     [MessagePackObject(keyAsPropertyName:true)]
     public class StateData
     {
-        [Key(0)] public Vector3 position;
-        [Key(1)] public Vector3 rotation;
-        [Key(2)] public Vector3 localVelocity;
-        [Key(3)] public Vector3 localAngularVelocity;
+        public Vector3 position;
+        public Vector3 rotation;
+        public Vector3 localVelocity;
+        public Vector3 localAngularVelocity;
 
     }
 
@@ -261,19 +255,19 @@ namespace ZeepkistDataStreamer
     [MessagePackObject(keyAsPropertyName:true)]
     public class StreamData
     {
-        [Key(0)] public StateData state;
-        [Key(1)] public float timestamp;
+        public StateData state;
+        public float timestamp;
     }
 
     // --- INPUT COMMAND ---
     [MessagePackObject(keyAsPropertyName:true)]
     public class InputCommand
     {
-        [Key(0)] public string cmd;
-        [Key(1)] public float steer;
-        [Key(2)] public float brake;
-        [Key(3)] public float armsUp;
-        [Key(4)] public float reset;
+        public string cmd;
+        public float steer;
+        public float brake;
+        public float armsUp;
+        public float reset;
     }
 
     // --- MessagePack Formatters and Resolvers for Unity types ---
